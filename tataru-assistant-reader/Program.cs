@@ -45,7 +45,7 @@ namespace tataru_assistant_reader
             await SystemFunction.WriteSystemMessage("Start reading...");
 
             _keepRunning = true;
-            await Task.Run(AliveCheck);
+            _ = AliveCheck();
 
             while (_keepRunning)
             {
