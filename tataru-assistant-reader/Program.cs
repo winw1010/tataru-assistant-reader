@@ -132,8 +132,8 @@ namespace tataru_assistant_reader
 
             if (type != "SYSTEM")
             {
-                name = ChatCleaner.ProcessFullLine(code, Encoding.UTF8.GetBytes(name));
-                text = ChatCleaner.ProcessFullLine(code, Encoding.UTF8.GetBytes(text));
+                name = ChatCleaner.ProcessFullLine(code, Encoding.UTF8.GetBytes(name.Replace("\r", "[r]")));
+                text = ChatCleaner.ProcessFullLine(code, Encoding.UTF8.GetBytes(text.Replace("\r", "[r]")));
             }
 
             string dataString = JsonUtilities.Serialize(new
