@@ -1,6 +1,8 @@
 ﻿using Sharlayan;
+using Sharlayan.Core;
 using Sharlayan.Extensions;
 using Sharlayan.Models;
+using Sharlayan.Models.ReadResults;
 using Sharlayan.Utilities;
 using System;
 using System.Collections.Generic;
@@ -16,7 +18,7 @@ namespace tataru_assistant_reader
 {
     class Program
     {
-        static bool _keepRunning = false;
+        private static bool _keepRunning = false;
 
         static async Task Main(string[] args)
         {
@@ -31,19 +33,60 @@ namespace tataru_assistant_reader
                 }
                 catch (Exception ex)
                 {
-                    SystemFunction.WriteSystemMessage(ex.Message);
+                    await SystemFunction.WriteSystemMessage(ex.Message);
                 }
 
                 await Task.Delay(1000);
             }
         }
 
-        private static async Task ReadText(MemoryHandler memoryHandler) { }
+        private static async Task ReadText(MemoryHandler memoryHandler)
+        {
+            await SystemFunction.WriteSystemMessage("Start reading...");
+
+            _keepRunning = true;
+            await Task.Run(AliveCheck);
+
+            while (_keepRunning)
+            {
+                if (!memoryHandler.Scanner.IsScanning)
+                {
+                    await Task.WhenAll(
+                        ReaderFunction.ReadDialog(memoryHandler),
+                        ReaderFunction.ReadChatLog(memoryHandler),
+                        ReaderFunction.ReadCutscene1(memoryHandler),
+                        ReaderFunction.ReadCutscene2(memoryHandler)
+                        );
+                }
+
+                await Task.Delay(50);
+            }
+
+            await SystemFunction.WriteSystemMessage("Stop reading...");
+        }
+
+        private static async Task AliveCheck()
+        {
+            while (true)
+            {
+                Process[] processes = Process.GetProcessesByName("ffxiv_dx11");
+                if (processes.Length > 0)
+                {
+                    _keepRunning = true;
+                    await Task.Delay(1000);
+                }
+                else
+                {
+                    _keepRunning = false;
+                    break;
+                }
+            }
+        }
     }
 
-    class SystemFunction 
+    class SystemFunction
     {
-        static string lastText = "";
+        private static string _lastText = "";
 
         public static MemoryHandler CreateMemoryHandler()
         {
@@ -76,16 +119,22 @@ namespace tataru_assistant_reader
             return memoryHandler;
         }
 
-        public static void WriteSystemMessage(string text)
+        public static async Task WriteSystemMessage(string text)
         {
-            if (text == lastText) return;
-            lastText = text;
-            WriteData("SYSTEM", "FFFF", "", text);
+            if (text == _lastText) return;
+            _lastText = text;
+            await WriteData("SYSTEM", "FFFF", "", text);
         }
 
-        public static async void WriteData(string type, string code, string name, string text, int sleepTime = 0)
+        public static async Task WriteData(string type, string code, string name, string text, int sleepTime = 0)
         {
             await Task.Delay(sleepTime);
+
+            if (type != "SYSTEM")
+            {
+                name = ChatCleaner.ProcessFullLine(code, Encoding.UTF8.GetBytes(name));
+                text = ChatCleaner.ProcessFullLine(code, Encoding.UTF8.GetBytes(text));
+            }
 
             string dataString = JsonUtilities.Serialize(new
             {
@@ -93,22 +142,204 @@ namespace tataru_assistant_reader
                 code,
                 name,
                 text,
-            });
+            }) + "\r\n";
 
-            Console.Write(dataString + "\r\n");
+            Console.Write(dataString);
         }
     }
 
     class ReaderFunction
     {
+        private static int _previousArrayIndex = 0;
+        private static int _previousOffset = 0;
+
+        private static string _lastDialogText = "";
+
+        private static List<ChatLogItem> _lastChatLogEntries = new List<ChatLogItem>();
+
+        private static string _lastCutsceneText1 = "";
+        private static string _lastCutsceneText2 = "";
+
+        static readonly List<string> _systemCode = new List<string>() { "0039", "0839", "0003", "0038", "003C", "0048", "001D", "001C" };
+
+        public static async Task ReadDialog(MemoryHandler memoryHandler)
+        {
+            try
+            {
+                string dialogName = StringFunction.GetMemoryString(memoryHandler, "PANEL_NAME", 128);
+                string dialogText = StringFunction.GetMemoryString(memoryHandler, "PANEL_TEXT", 512);
+
+                if (dialogName.Length > 0 && dialogText.Length > 0 && dialogText != _lastDialogText)
+                {
+                    _lastDialogText = dialogText;
+                    await SystemFunction.WriteData("DIALOG", "003D", dialogName, dialogText);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        public static async Task ReadChatLog(MemoryHandler memoryHandler)
+        {
+            try
+            {
+                ChatLogResult readResult = memoryHandler.Reader.GetChatLog(_previousArrayIndex, _previousOffset);
+                List<ChatLogItem> chatLogEntries = readResult.ChatLogItems.ToList();
+
+                _previousArrayIndex = readResult.PreviousArrayIndex;
+                _previousOffset = readResult.PreviousOffset;
+
+                if (chatLogEntries.Count > 0)
+                {
+                    if (ArrayFunction.IsSameChatLogEntries(chatLogEntries, _lastChatLogEntries))
+                    {
+                        return;
+                    }
+                    else
+                    {
+                        _lastChatLogEntries = chatLogEntries;
+                    }
+
+                    for (int i = 0; i < chatLogEntries.Count; i++)
+                    {
+                        ChatLogItem chatLogItem = chatLogEntries[i];
+
+                        string logName = StringFunction.GetLogName(chatLogItem);
+                        string logText = chatLogItem.Message;
+
+                        if (logName.Length == 0 && _systemCode.IndexOf(chatLogItem.Code) < 0)
+                        {
+                            string[] splitedMessage = logText.Split(':');
+                            if (splitedMessage[0].Length > 0 && splitedMessage.Length > 1)
+                            {
+                                logName = splitedMessage[0];
+                                logText = logText.Replace(logName + ":", "");
+                            }
+                        }
+
+                        await SystemFunction.WriteData("CHAT_LOG", chatLogItem.Code, logName, logText);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        public static async Task ReadCutscene1(MemoryHandler memoryHandler)
+        {
+            try
+            {
+                var cutsceneDetectorPointer = (IntPtr)memoryHandler.Scanner.Locations["CUTSCENE_DETECTOR"];
+                int isCutscene = (int)memoryHandler.GetInt64(cutsceneDetectorPointer);
+
+                if (isCutscene == 1) return;
+
+                string cutsceneText1 = StringFunction.GetMemoryString(memoryHandler, "CUTSCENE_TEXT", 256);
+
+                if (cutsceneText1.Length > 0 && cutsceneText1 != _lastCutsceneText1)
+                {
+                    _lastCutsceneText1 = cutsceneText1;
+                    await SystemFunction.WriteData("CUTSCENE1", "003D", "", cutsceneText1);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        public static async Task ReadCutscene2(MemoryHandler memoryHandler)
+        {
+            try
+            {
+                string cutsceneText2 = StringFunction.GetMemoryString(memoryHandler, "CUTSCENE_TEXT_2", 256);
+
+                if (cutsceneText2.Length > 0 && cutsceneText2 != _lastCutsceneText2)
+                {
+                    _lastCutsceneText2 = cutsceneText2;
+                    await SystemFunction.WriteData("CUTSCENE2", "003D", "", cutsceneText2, 1000);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
     }
 
     class ArrayFunction
     {
+        public static bool IsSameChatLogEntries(List<ChatLogItem> chatLogEntries, List<ChatLogItem> lastChatLogEntries)
+        {
+            if (chatLogEntries.Count != lastChatLogEntries.Count)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < chatLogEntries.Count; i++)
+            {
+                ChatLogItem chatLogItem = chatLogEntries[i];
+                ChatLogItem lastChatLogItem = lastChatLogEntries[i];
+
+                if (chatLogItem.Message != lastChatLogItem.Message)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
     }
 
     class StringFunction
     {
+        public static string GetLogName(ChatLogItem chatLogItem)
+        {
+            string logName = "";
+
+            try
+            {
+                if (chatLogItem.PlayerName != null)
+                {
+                    logName = chatLogItem.PlayerName;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return logName;
+        }
+
+        public static string GetMemoryString(MemoryHandler memoryHandler, string key, int length)
+        {
+            string byteString = "";
+
+            try
+            {
+                byte[] byteArray = memoryHandler.GetByteArray(memoryHandler.Scanner.Locations[key], length);
+                byteArray = GetRealByteArray(byteArray);
+                byteString = Encoding.UTF8.GetString(byteArray);
+            }
+            catch (Exception)
+            {
+            }
+
+            return byteString;
+        }
+
+        public static byte[] GetRealByteArray(byte[] byteArray)
+        {
+            List<byte> byteList = new List<byte>();
+            int nullIndex = byteArray.ToList().IndexOf(0x00);
+
+            for (int i = 0; i < nullIndex; i++)
+            {
+                byteList.Add(byteArray[i]);
+            }
+
+            return byteList.ToArray();
+        }
     }
 
     class ChatCleaner // Sharlayan.Utilites.ChatCleaner.cs
