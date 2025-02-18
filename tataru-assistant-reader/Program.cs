@@ -66,8 +66,7 @@ namespace tataru_assistant_reader
                     await Task.WhenAll(
                         ReaderFunction.ReadDialog(memoryHandler),
                         ReaderFunction.ReadChatLog(memoryHandler),
-                        ReaderFunction.ReadCutscene1(memoryHandler),
-                        ReaderFunction.ReadCutscene2(memoryHandler)
+                        ReaderFunction.ReadCutscene(memoryHandler)
                         );
                 }
 
@@ -248,7 +247,7 @@ namespace tataru_assistant_reader
             }
         }
 
-        public static async Task ReadCutscene1(MemoryHandler memoryHandler)
+        public static async Task ReadCutscene(MemoryHandler memoryHandler)
         {
             try
             {
@@ -263,23 +262,6 @@ namespace tataru_assistant_reader
                 {
                     _lastCutsceneText1 = cutsceneText1;
                     await SystemFunction.WriteData("CUTSCENE1", "003D", "", cutsceneText1);
-                }
-            }
-            catch (Exception)
-            {
-            }
-        }
-
-        public static async Task ReadCutscene2(MemoryHandler memoryHandler)
-        {
-            try
-            {
-                string cutsceneText2 = StringFunction.GetMemoryString(memoryHandler, "CUTSCENE_TEXT_2", 256);
-
-                if (cutsceneText2.Length > 0 && cutsceneText2 != _lastCutsceneText2)
-                {
-                    _lastCutsceneText2 = cutsceneText2;
-                    await SystemFunction.WriteData("CUTSCENE2", "003D", "", cutsceneText2, 1000);
                 }
             }
             catch (Exception)
