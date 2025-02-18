@@ -162,7 +162,7 @@ namespace tataru_assistant_reader
         private static string _lastCutsceneText1 = "";
         private static string _lastCutsceneText2 = "";
 
-        static readonly List<string> _systemCode = new List<string>() { "0039", "0839", "0003", "0038", "003C", "0048", "001D", "001C" };
+        private static readonly List<string> _systemCode = new List<string>() { "0039", "0839", "0003", "0038", "003C", "0048", "001D", "001C" };
 
         public static async Task ReadDialog(MemoryHandler memoryHandler)
         {
