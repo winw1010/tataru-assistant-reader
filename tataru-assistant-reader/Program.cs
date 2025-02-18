@@ -128,11 +128,13 @@ namespace tataru_assistant_reader
 
         public static async Task WriteData(string type, string code, string name, string text, int sleepTime = 0)
         {
+            if (text == "") { return; }
+
             await Task.Delay(sleepTime);
 
             if (type != "SYSTEM")
             {
-                name = ChatCleaner.ProcessFullLine(code, Encoding.UTF8.GetBytes(name.Replace("\r", "[r]")));
+                name = ChatCleaner.ProcessFullLine(code, Encoding.UTF8.GetBytes(name));
                 text = ChatCleaner.ProcessFullLine(code, Encoding.UTF8.GetBytes(text.Replace("\r", "[r]")));
             }
 
