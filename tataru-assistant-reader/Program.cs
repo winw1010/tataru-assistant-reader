@@ -18,13 +18,28 @@ namespace tataru_assistant_reader
 {
     class Program
     {
+        private static bool _keepAlive = true;
         private static bool _keepRunning = false;
 
         static async Task Main(string[] args)
         {
+            // SIGINT
+            Console.CancelKeyPress += (sender, e) =>
+            {
+                _keepAlive = false;
+            };
+
+            // SIGTERM
+            AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
+            {
+                _keepAlive = false;
+            };
+
             try { Console.OutputEncoding = Encoding.UTF8; } catch (Exception) { }
 
-            while (true)
+            _ = AliveCheck();
+
+            while (_keepAlive)
             {
                 try
                 {
@@ -44,10 +59,7 @@ namespace tataru_assistant_reader
         {
             await SystemFunction.WriteSystemMessage("Start reading...");
 
-            _keepRunning = true;
-            _ = AliveCheck();
-
-            while (_keepRunning)
+            while (_keepAlive && _keepRunning)
             {
                 if (!memoryHandler.Scanner.IsScanning)
                 {
@@ -67,19 +79,26 @@ namespace tataru_assistant_reader
 
         private static async Task AliveCheck()
         {
-            while (true)
+            while (_keepAlive)
             {
-                Process[] processes = Process.GetProcessesByName("ffxiv_dx11");
-                if (processes.Length > 0)
+                try
                 {
-                    _keepRunning = true;
-                    await Task.Delay(1000);
+                    Process[] processes = Process.GetProcessesByName("ffxiv_dx11");
+
+                    if (processes.Length > 0)
+                    {
+                        _keepRunning = true;
+                    }
+                    else
+                    {
+                        _keepRunning = false;
+                    }
                 }
-                else
+                catch (Exception)
                 {
-                    _keepRunning = false;
-                    break;
                 }
+
+                await Task.Delay(1000);
             }
         }
     }
