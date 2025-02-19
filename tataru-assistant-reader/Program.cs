@@ -252,16 +252,14 @@ namespace tataru_assistant_reader
             try
             {
                 var cutsceneDetectorPointer = (IntPtr)memoryHandler.Scanner.Locations["CUTSCENE_DETECTOR"];
-                int isCutscene = (int)memoryHandler.GetInt64(cutsceneDetectorPointer);
-
-                if (isCutscene == 1) return;
+                int cutsceneFlag = (int)memoryHandler.GetInt64(cutsceneDetectorPointer); // 0 = In cuscene, 1 = Not in cutscene
 
                 string cutsceneText1 = StringFunction.GetMemoryString(memoryHandler, "CUTSCENE_TEXT", 256);
 
                 if (cutsceneText1.Length > 0 && cutsceneText1 != _lastCutsceneText1)
                 {
                     _lastCutsceneText1 = cutsceneText1;
-                    await SystemFunction.WriteData("CUTSCENE1", "003D", "", cutsceneText1);
+                    await SystemFunction.WriteData("CUTSCENE" + cutsceneFlag, "003D", "", cutsceneText1);
                 }
             }
             catch (Exception)
