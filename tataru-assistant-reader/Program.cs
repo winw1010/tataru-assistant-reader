@@ -199,7 +199,10 @@ namespace tataru_assistant_reader
 
         private static string _lastPlayerName = "";
 
-        private static readonly List<string> _systemCode = new List<string>() { "0039", "0839", "0003", "0038", "003C", "0048", "001D", "001C" };
+        private static readonly List<string> _systemCodes = new List<string>() { "0039", "0839", "0003", "0038", "003C", "0048", "001D", "001C" };
+
+        private static readonly List<string> _knockDownNames = new List<string>() { "Down for the Count", "Au tapis", "Am Boden", "ノックダウン" };
+        private static readonly List<short> _knockDownCodes = new List<short>() { 625, 774, 783, 896, 1762, 1785, 1950, 1953, 1963, 2408, 2910, 2961 };
 
         public static async Task ReadDialog(MemoryHandler memoryHandler)
         {
@@ -247,7 +250,7 @@ namespace tataru_assistant_reader
                         string logName = StringFunction.GetLogName(chatLogItem);
                         string logText = chatLogItem.Message;
 
-                        if (logName.Length == 0 && _systemCode.IndexOf(chatLogItem.Code) < 0)
+                        if (logName.Length == 0 && !_systemCodes.Contains(chatLogItem.Code))
                         {
                             string[] splitedMessage = logText.Split(':');
                             if (splitedMessage[0].Length > 0 && splitedMessage.Length > 1)
@@ -309,6 +312,19 @@ namespace tataru_assistant_reader
         private static bool IsViewingCutscene(MemoryHandler memoryHandler)
         {
             CurrentPlayerResult currentPlayer = memoryHandler.Reader.GetCurrentPlayer();
+            List<StatusItem> statusList = currentPlayer.Entity.StatusItems;
+
+            // knock down check
+            for (int i = 0; i < statusList.Count; i++)
+            {
+                StatusItem statusItem = statusList[i];
+
+                if (_knockDownNames.Contains(statusItem.StatusName) || _knockDownCodes.Contains(statusItem.StatusID))
+                {
+                    return true;
+                }
+            }
+
             return currentPlayer.Entity.InCutscene;
         }
     }
