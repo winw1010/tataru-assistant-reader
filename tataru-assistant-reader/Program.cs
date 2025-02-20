@@ -204,6 +204,9 @@ namespace tataru_assistant_reader
         private static readonly List<string> _knockDownNames = new List<string>() { "Down for the Count", "Au tapis", "Am Boden", "ノックダウン" };
         private static readonly List<short> _knockDownCodes = new List<short>() { 625, 774, 783, 896, 1762, 1785, 1950, 1953, 1963, 2408, 2910, 2961 };
 
+        private static readonly List<string> _preoccupiedNames = new List<string>() { "Preoccupied", "En action", "Handelt", "行動中" };
+        private static readonly List<short> _preoccupiedCodes = new List<short>() { 1619 };
+
         public static async Task ReadDialog(MemoryHandler memoryHandler)
         {
             try
@@ -320,12 +323,19 @@ namespace tataru_assistant_reader
                 return true;
             }
 
-            // knock down check
+            // status check
             for (int i = 0; i < statusList.Count; i++)
             {
                 StatusItem statusItem = statusList[i];
 
+                // knock down
                 if (_knockDownNames.Contains(statusItem.StatusName) || _knockDownCodes.Contains(statusItem.StatusID))
+                {
+                    return true;
+                }
+
+                // preoccupied
+                if (_preoccupiedNames.Contains(statusItem.StatusName) || _preoccupiedCodes.Contains(statusItem.StatusID))
                 {
                     return true;
                 }
