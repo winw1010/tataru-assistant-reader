@@ -67,8 +67,7 @@ namespace tataru_assistant_reader
                     await Task.WhenAll(
                         ReaderFunction.ReadDialog(memoryHandler),
                         ReaderFunction.ReadChatLog(memoryHandler),
-                        ReaderFunction.ReadCutscene(memoryHandler),
-                        ReaderFunction.ReadPlayerName(memoryHandler)
+                        ReaderFunction.ReadCutscene(memoryHandler)
                         );
                 }
 
@@ -197,8 +196,6 @@ namespace tataru_assistant_reader
 
         private static string _lastCutsceneText = "";
 
-        private static string _lastPlayerName = "";
-
         private static readonly List<string> _systemCodes = new List<string>() { "0039", "0839", "0003", "0038", "003C", "0048", "001D", "001C" };
 
         private static readonly List<string> _knockDownNames = new List<string>() { "Down for the Count", "Au tapis", "Am Boden", "ノックダウン" };
@@ -294,31 +291,13 @@ namespace tataru_assistant_reader
             }
         }
 
-        public static async Task ReadPlayerName(MemoryHandler memoryHandler)
-        {
-            try
-            {
-                CurrentPlayerResult currentPlayer = memoryHandler.Reader.GetCurrentPlayer();
-                string playerName = currentPlayer.Entity.Name;
-
-                if (playerName.Length > 0 && playerName != _lastPlayerName)
-                {
-                    _lastPlayerName = playerName;
-                    await SystemFunction.WriteData("PLAYER_NAME", "003D", "", playerName);
-                }
-            }
-            catch (Exception)
-            {
-            }
-        }
-
         private static bool IsViewingCutscene(MemoryHandler memoryHandler)
         {
             CurrentPlayerResult currentPlayer = memoryHandler.Reader.GetCurrentPlayer();
             List<StatusItem> statusList = currentPlayer.Entity.StatusItems;
 
             // cutscene check
-            if(currentPlayer.Entity.InCutscene)
+            if (currentPlayer.Entity.InCutscene)
             {
                 return true;
             }
