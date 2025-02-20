@@ -1,5 +1,6 @@
 ﻿using Sharlayan;
 using Sharlayan.Core;
+using Sharlayan.Enums;
 using Sharlayan.Extensions;
 using Sharlayan.Models;
 using Sharlayan.Models.ReadResults;
@@ -66,7 +67,8 @@ namespace tataru_assistant_reader
                     await Task.WhenAll(
                         ReaderFunction.ReadDialog(memoryHandler),
                         ReaderFunction.ReadChatLog(memoryHandler),
-                        ReaderFunction.ReadCutscene(memoryHandler)
+                        ReaderFunction.ReadCutscene(memoryHandler),
+                        ReaderFunction.ReadPlayerName(memoryHandler)
                         );
                 }
 
@@ -111,20 +113,36 @@ namespace tataru_assistant_reader
             // Get process
             Process[] processes = Process.GetProcessesByName("ffxiv_dx11");
 
-            if (processes.Length <= 0) { throw new Exception("Waiting..."); }
+            if (!(processes.Length > 0)) { throw new Exception("Waiting..."); }
+
+            // supported: Global, Chinese, Korean
+            GameRegion gameRegion = GameRegion.Global;
+            GameLanguage gameLanguage = GameLanguage.English;
+
+            // whether to always hit API on start to get the latest sigs based on patchVersion, or use the local json cache (if the file doesn't exist, API will be hit)
+            bool useLocalCache = true;
+
+            // patchVersion of game, or latest
+            string patchVersion = "latest";
+
+            // process of game
+            ProcessModel processModel = new ProcessModel
+            {
+                Process = processes[0],
+            };
 
             // Create configuration
             SharlayanConfiguration configuration = new SharlayanConfiguration
             {
-                ProcessModel = new ProcessModel
-                {
-                    Process = processes.FirstOrDefault(),
-                },
+                ProcessModel = processModel,
+                GameLanguage = gameLanguage,
+                GameRegion = gameRegion,
+                PatchVersion = patchVersion,
+                UseLocalCache = useLocalCache
             };
 
             // Create memoryHandler
-            MemoryHandler memoryHandler = new MemoryHandler(configuration);
-            memoryHandler.Scanner.Locations.Clear();
+            MemoryHandler memoryHandler = SharlayanMemoryManager.Instance.AddHandler(configuration);
 
             // Set signatures
             string signaturesText = File.ReadAllText("signatures.json");
@@ -154,7 +172,7 @@ namespace tataru_assistant_reader
                 text = ChatCleaner.ProcessFullLine(code, Encoding.UTF8.GetBytes(text.Replace("\r", "[r]")));
             }
 
-            if (text == "") { return; }
+            if (!(text.Length > 0)) { return; }
 
             string dataString = JsonUtilities.Serialize(new
             {
@@ -177,8 +195,9 @@ namespace tataru_assistant_reader
 
         private static List<ChatLogItem> _lastChatLogEntries = new List<ChatLogItem>();
 
-        private static string _lastCutsceneText1 = "";
-        private static string _lastCutsceneText2 = "";
+        private static string _lastCutsceneText = "";
+
+        private static string _lastPlayerName = "";
 
         private static readonly List<string> _systemCode = new List<string>() { "0039", "0839", "0003", "0038", "003C", "0048", "001D", "001C" };
 
@@ -251,20 +270,46 @@ namespace tataru_assistant_reader
         {
             try
             {
-                var cutsceneDetectorPointer = (IntPtr)memoryHandler.Scanner.Locations["CUTSCENE_DETECTOR"];
-                int cutsceneFlag = (int)memoryHandler.GetInt64(cutsceneDetectorPointer); // 0 = In cuscene, 1 = Not in cutscene
+                // var cutsceneDetectorPointer = (IntPtr)memoryHandler.Scanner.Locations["CUTSCENE_DETECTOR"];
+                // int cutsceneFlag = (int)memoryHandler.GetInt64(cutsceneDetectorPointer); // 0 = In cuscene, 1 = Not in cutscene
 
-                string cutsceneText1 = StringFunction.GetMemoryString(memoryHandler, "CUTSCENE_TEXT", 256);
+                if (!IsViewingCutscene(memoryHandler)) { return; }
 
-                if (cutsceneText1.Length > 0 && cutsceneText1 != _lastCutsceneText1)
+                string cutsceneText = StringFunction.GetMemoryString(memoryHandler, "CUTSCENE_TEXT", 256);
+
+                if (cutsceneText.Length > 0 && cutsceneText != _lastCutsceneText)
                 {
-                    _lastCutsceneText1 = cutsceneText1;
-                    await SystemFunction.WriteData("CUTSCENE" + cutsceneFlag, "003D", "", cutsceneText1);
+                    _lastCutsceneText = cutsceneText;
+                    await SystemFunction.WriteData("CUTSCENE", "003D", "", cutsceneText);
                 }
             }
             catch (Exception)
             {
             }
+        }
+
+        public static async Task ReadPlayerName(MemoryHandler memoryHandler)
+        {
+            try
+            {
+                CurrentPlayerResult currentPlayer = memoryHandler.Reader.GetCurrentPlayer();
+                string playerName = currentPlayer.Entity.Name;
+
+                if (playerName.Length > 0 && playerName != _lastPlayerName)
+                {
+                    _lastPlayerName = playerName;
+                    await SystemFunction.WriteData("PLAYER_NAME", "003D", "", playerName);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static bool IsViewingCutscene(MemoryHandler memoryHandler)
+        {
+            CurrentPlayerResult currentPlayer = memoryHandler.Reader.GetCurrentPlayer();
+            return currentPlayer.Entity.InCutscene;
         }
     }
 
