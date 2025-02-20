@@ -314,6 +314,12 @@ namespace tataru_assistant_reader
             CurrentPlayerResult currentPlayer = memoryHandler.Reader.GetCurrentPlayer();
             List<StatusItem> statusList = currentPlayer.Entity.StatusItems;
 
+            // cutscene check
+            if(currentPlayer.Entity.InCutscene)
+            {
+                return true;
+            }
+
             // knock down check
             for (int i = 0; i < statusList.Count; i++)
             {
@@ -325,7 +331,7 @@ namespace tataru_assistant_reader
                 }
             }
 
-            return currentPlayer.Entity.InCutscene;
+            return false;
         }
     }
 
