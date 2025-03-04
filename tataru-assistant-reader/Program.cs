@@ -273,10 +273,10 @@ namespace tataru_assistant_reader
         {
             try
             {
-                // var cutsceneDetectorPointer = (IntPtr)memoryHandler.Scanner.Locations["CUTSCENE_DETECTOR"];
-                // int cutsceneFlag = (int)memoryHandler.GetInt64(cutsceneDetectorPointer); // 0 = In cuscene, 1 = Not in cutscene
+                var cutsceneDetectorPointer = (IntPtr)memoryHandler.Scanner.Locations["CUTSCENE_DETECTOR"];
+                int cutsceneFlag = (int)memoryHandler.GetInt64(cutsceneDetectorPointer); // 0 = In cuscene, 1 = Not in cutscene
 
-                if (!IsViewingCutscene(memoryHandler)) { return; }
+                if (!IsViewingCutscene(memoryHandler, cutsceneFlag)) { return; }
 
                 string cutsceneText = StringFunction.GetMemoryString(memoryHandler, "CUTSCENE_TEXT", 256);
 
@@ -291,16 +291,23 @@ namespace tataru_assistant_reader
             }
         }
 
-        private static bool IsViewingCutscene(MemoryHandler memoryHandler)
+        private static bool IsViewingCutscene(MemoryHandler memoryHandler, int cutsceneFlag)
         {
             CurrentPlayerResult currentPlayer = memoryHandler.Reader.GetCurrentPlayer();
             List<StatusItem> statusList = currentPlayer.Entity.StatusItems;
 
             // cutscene check
+            if (cutsceneFlag == 0)
+            {
+                return true;
+            }
+
+            /*
             if (currentPlayer.Entity.InCutscene)
             {
                 return true;
             }
+            */
 
             // status check
             for (int i = 0; i < statusList.Count; i++)
