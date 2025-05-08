@@ -3,7 +3,6 @@ using Sharlayan.Core;
 using Sharlayan.Enums;
 using Sharlayan.Extensions;
 using Sharlayan.Models;
-using Sharlayan.Models.ReadResults;
 using Sharlayan.Utilities;
 using System;
 using System.Collections.Generic;
@@ -44,7 +43,7 @@ namespace tataru_assistant_reader
             {
                 try
                 {
-                    MemoryHandler memoryHandler = SystemFunction.CreateMemoryHandler();
+                    var memoryHandler = SystemFunction.CreateMemoryHandler();
                     await ReadText(memoryHandler);
                 }
                 catch (Exception ex)
@@ -125,13 +124,13 @@ namespace tataru_assistant_reader
             string patchVersion = "latest";
 
             // process of game
-            ProcessModel processModel = new ProcessModel
+            var processModel = new ProcessModel
             {
                 Process = processes[0],
             };
 
             // Create configuration
-            SharlayanConfiguration configuration = new SharlayanConfiguration
+            var configuration = new SharlayanConfiguration
             {
                 ProcessModel = processModel,
                 GameLanguage = gameLanguage,
@@ -141,7 +140,7 @@ namespace tataru_assistant_reader
             };
 
             // Create memoryHandler
-            MemoryHandler memoryHandler = SharlayanMemoryManager.Instance.AddHandler(configuration);
+            var memoryHandler = SharlayanMemoryManager.Instance.AddHandler(configuration);
 
             // Set signatures
             string signaturesText = File.ReadAllText("signatures.json");
@@ -226,7 +225,7 @@ namespace tataru_assistant_reader
         {
             try
             {
-                ChatLogResult readResult = memoryHandler.Reader.GetChatLog(_previousArrayIndex, _previousOffset);
+                var readResult = memoryHandler.Reader.GetChatLog(_previousArrayIndex, _previousOffset);
                 List<ChatLogItem> chatLogEntries = readResult.ChatLogItems.ToList();
 
                 _previousArrayIndex = readResult.PreviousArrayIndex;
@@ -245,7 +244,7 @@ namespace tataru_assistant_reader
 
                     for (int i = 0; i < chatLogEntries.Count; i++)
                     {
-                        ChatLogItem chatLogItem = chatLogEntries[i];
+                        var chatLogItem = chatLogEntries[i];
 
                         string logName = StringFunction.GetLogName(chatLogItem);
                         string logText = chatLogItem.Message;
@@ -294,31 +293,54 @@ namespace tataru_assistant_reader
 
         private static bool IsViewingCutscene(MemoryHandler memoryHandler)
         {
-            CurrentPlayerResult currentPlayer = memoryHandler.Reader.GetCurrentPlayer();
-            List<StatusItem> statusList = currentPlayer.Entity.StatusItems;
-
-            /*
-            if (currentPlayer.Entity.InCutscene)
+            if (memoryHandler.Reader.CanGetActors())
             {
-                return true;
-            }
-            */
+                var partyMembers = memoryHandler.Reader.GetPartyMembers().PartyMembers.Values;
+                var currentPlayer = memoryHandler.Reader.GetCurrentPlayer();
+                List<StatusItem> currentPlayerStatusItems = currentPlayer.Entity.StatusItems;
 
-            // status check
-            for (int i = 0; i < statusList.Count; i++)
-            {
-                StatusItem statusItem = statusList[i];
-
-                // knock down
-                if (_knockDownNames.Contains(statusItem.StatusName) || _knockDownCodes.Contains(statusItem.StatusID))
+                /*
+                if (currentPlayer.Entity.InCutscene)
                 {
                     return true;
                 }
+                */
 
-                // preoccupied
-                if (_preoccupiedNames.Contains(statusItem.StatusName) || _preoccupiedCodes.Contains(statusItem.StatusID))
+                // status check
+
+                foreach (var partyMember in partyMembers)
                 {
-                    return true;
+                    var StatusItems = partyMember.StatusItems;
+
+                    foreach (var statusItem in StatusItems)
+                    {
+                        // knock down
+                        if (_knockDownNames.Contains(statusItem.StatusName) || _knockDownCodes.Contains(statusItem.StatusID))
+                        {
+                            return true;
+                        }
+
+                        // preoccupied
+                        if (_preoccupiedNames.Contains(statusItem.StatusName) || _preoccupiedCodes.Contains(statusItem.StatusID))
+                        {
+                            return true;
+                        }
+                    }
+                }
+
+                foreach (var statusItem in currentPlayerStatusItems)
+                {
+                    // knock down
+                    if (_knockDownNames.Contains(statusItem.StatusName) || _knockDownCodes.Contains(statusItem.StatusID))
+                    {
+                        return true;
+                    }
+
+                    // preoccupied
+                    if (_preoccupiedNames.Contains(statusItem.StatusName) || _preoccupiedCodes.Contains(statusItem.StatusID))
+                    {
+                        return true;
+                    }
                 }
             }
 
