@@ -306,7 +306,7 @@ namespace tataru_assistant_reader
                 }
                 */
 
-                // status check
+                // status check (party members)
                 foreach (var partyMember in partyMembers)
                 {
                     var StatusItems = partyMember.StatusItems;
@@ -320,6 +320,7 @@ namespace tataru_assistant_reader
                     }
                 }
 
+                // status check (current player)
                 foreach (var statusItem in currentPlayerStatusItems)
                 {
                     if (IsCutsceneStatus(statusItem))
