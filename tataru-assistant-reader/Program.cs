@@ -307,21 +307,13 @@ namespace tataru_assistant_reader
                 */
 
                 // status check
-
                 foreach (var partyMember in partyMembers)
                 {
                     var StatusItems = partyMember.StatusItems;
 
                     foreach (var statusItem in StatusItems)
                     {
-                        // knock down
-                        if (_knockDownNames.Contains(statusItem.StatusName) || _knockDownCodes.Contains(statusItem.StatusID))
-                        {
-                            return true;
-                        }
-
-                        // preoccupied
-                        if (_preoccupiedNames.Contains(statusItem.StatusName) || _preoccupiedCodes.Contains(statusItem.StatusID))
+                        if (IsCutsceneStatus(statusItem))
                         {
                             return true;
                         }
@@ -330,18 +322,28 @@ namespace tataru_assistant_reader
 
                 foreach (var statusItem in currentPlayerStatusItems)
                 {
-                    // knock down
-                    if (_knockDownNames.Contains(statusItem.StatusName) || _knockDownCodes.Contains(statusItem.StatusID))
-                    {
-                        return true;
-                    }
-
-                    // preoccupied
-                    if (_preoccupiedNames.Contains(statusItem.StatusName) || _preoccupiedCodes.Contains(statusItem.StatusID))
+                    if (IsCutsceneStatus(statusItem))
                     {
                         return true;
                     }
                 }
+            }
+
+            return false;
+        }
+
+        private static bool IsCutsceneStatus(StatusItem statusItem)
+        {
+            // knock down
+            if (_knockDownNames.Contains(statusItem.StatusName) || _knockDownCodes.Contains(statusItem.StatusID))
+            {
+                return true;
+            }
+
+            // preoccupied
+            if (_preoccupiedNames.Contains(statusItem.StatusName) || _preoccupiedCodes.Contains(statusItem.StatusID))
+            {
+                return true;
             }
 
             return false;
