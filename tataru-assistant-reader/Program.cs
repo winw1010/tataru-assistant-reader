@@ -336,13 +336,13 @@ namespace tataru_assistant_reader
         private static bool IsCutsceneStatus(StatusItem statusItem)
         {
             // knock down
-            if (_knockDownNames.Contains(statusItem.StatusName) || _knockDownCodes.Contains(statusItem.StatusID))
+            if (_knockDownNames.Contains(statusItem.StatusName) /*|| _knockDownCodes.Contains(statusItem.StatusID)*/)
             {
                 return true;
             }
 
             // preoccupied
-            if (_preoccupiedNames.Contains(statusItem.StatusName) || _preoccupiedCodes.Contains(statusItem.StatusID))
+            if (_preoccupiedNames.Contains(statusItem.StatusName) /*|| _preoccupiedCodes.Contains(statusItem.StatusID)*/)
             {
                 return true;
             }
