@@ -275,7 +275,7 @@ namespace tataru_assistant_reader
                 var cutsceneDetectorPointer = (IntPtr)memoryHandler.Scanner.Locations["CUTSCENE_DETECTOR"];
                 int cutsceneFlag = (int)memoryHandler.GetInt64(cutsceneDetectorPointer); // 0 = In cuscene, 1 = Not in cutscene
 
-                if (cutsceneFlag == 0 || IsViewingCutscene(memoryHandler))
+                if (cutsceneFlag == 0)
                 {
                     string cutsceneText = StringFunction.GetMemoryString(memoryHandler, "CUTSCENE_TEXT", 256);
 
