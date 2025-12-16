@@ -89,6 +89,8 @@ namespace Sharlayan.Utilities {
 
                 newList.Clear();
 
+                // replace \r\n with white space
+                cleaned = NewLineRegex.Replace(cleaned, " ");
                 // replace right arrow in chat (parsing)
                 cleaned = ArrowRegex.Replace(cleaned, "⇒");
                 // replace HQ symbol

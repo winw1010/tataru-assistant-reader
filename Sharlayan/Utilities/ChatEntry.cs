@@ -23,6 +23,12 @@ namespace Sharlayan.Utilities {
 
         private const string CLEANED_SUBSTRING_CHECK = ": ";
 
+
+        public static string ProcessFullLine(string code, byte[] bytes)
+        {
+            return ChatCleaner.ProcessFullLine(code, bytes);
+        }
+
         public static ChatLogItem Process(byte[] raw) {
             ChatLogItem chatLogEntry = new ChatLogItem();
             try {

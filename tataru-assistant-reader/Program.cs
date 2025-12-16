@@ -1,7 +1,6 @@
 ﻿using Sharlayan;
 using Sharlayan.Core;
 using Sharlayan.Enums;
-using Sharlayan.Extensions;
 using Sharlayan.Models;
 using Sharlayan.Utilities;
 using System;
@@ -10,9 +9,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using System.Web;
 
 namespace tataru_assistant_reader
 {
@@ -164,12 +161,6 @@ namespace tataru_assistant_reader
         {
             await Task.Delay(sleepTime);
 
-            if (type != "SYSTEM")
-            {
-                name = ChatCleaner.ProcessFullLine(code, Encoding.UTF8.GetBytes(name));
-                text = ChatCleaner.ProcessFullLine(code, Encoding.UTF8.GetBytes(text.Replace("\r", "[r]")));
-            }
-
             if (!(text.Length > 0)) { return; }
 
             string dataString = JsonUtilities.Serialize(new
@@ -207,8 +198,11 @@ namespace tataru_assistant_reader
         {
             try
             {
-                string dialogName = StringFunction.GetMemoryString(memoryHandler, "PANEL_NAME", 128);
-                string dialogText = StringFunction.GetMemoryString(memoryHandler, "PANEL_TEXT", 512);
+                byte[] rawDialogName = GetRealBytes(memoryHandler.GetByteArray(memoryHandler.Scanner.Locations["PANEL_NAME"], 128));
+                byte[] rawDialogText = GetRealBytes(memoryHandler.GetByteArray(memoryHandler.Scanner.Locations["PANEL_TEXT"], 512));
+
+                string dialogName = XMLCleaner.SanitizeXmlString(ChatEntry.ProcessFullLine("003D", rawDialogName)).Trim();
+                string dialogText = XMLCleaner.SanitizeXmlString(ChatEntry.ProcessFullLine("003D", rawDialogText)).Trim();
 
                 if (dialogName.Length > 0 && dialogText.Length > 0 && dialogText != _lastDialogText)
                 {
@@ -246,7 +240,7 @@ namespace tataru_assistant_reader
                     {
                         var chatLogItem = chatLogEntries[i];
 
-                        string logName = StringFunction.GetLogName(chatLogItem);
+                        string logName = chatLogItem.PlayerName != null ? chatLogItem.PlayerName : "";
                         string logText = chatLogItem.Message;
 
                         if (logName.Length == 0 && !_systemCodes.Contains(chatLogItem.Code))
@@ -277,7 +271,8 @@ namespace tataru_assistant_reader
 
                 if (cutsceneFlag == 0)
                 {
-                    string cutsceneText = StringFunction.GetMemoryString(memoryHandler, "CUTSCENE_TEXT", 256);
+                    byte[] rawCutsceneText = GetRealBytes(memoryHandler.GetByteArray(memoryHandler.Scanner.Locations["CUTSCENE_TEXT"], 256));
+                    string cutsceneText = XMLCleaner.SanitizeXmlString(ChatEntry.ProcessFullLine("003D", rawCutsceneText)).Trim();
 
                     if (cutsceneText.Length > 0 && cutsceneText != _lastCutsceneText)
                     {
@@ -289,6 +284,19 @@ namespace tataru_assistant_reader
             catch (Exception)
             {
             }
+        }
+
+        private static byte[] GetRealBytes(byte[] bytes)
+        {
+            List<byte> bytesList = new List<byte>();
+            int nullIndex = bytes.ToList().IndexOf(0x00);
+
+            for (int i = 0; i < nullIndex; i++)
+            {
+                bytesList.Add(bytes[i]);
+            }
+
+            return bytesList.ToArray();
         }
 
         private static bool IsViewingCutscene(MemoryHandler memoryHandler)
@@ -336,13 +344,13 @@ namespace tataru_assistant_reader
         private static bool IsCutsceneStatus(StatusItem statusItem)
         {
             // knock down
-            if (_knockDownNames.Contains(statusItem.StatusName) /*|| _knockDownCodes.Contains(statusItem.StatusID)*/)
+            if (_knockDownNames.Contains(statusItem.StatusName) || _knockDownCodes.Contains(statusItem.StatusID))
             {
                 return true;
             }
 
             // preoccupied
-            if (_preoccupiedNames.Contains(statusItem.StatusName) /*|| _preoccupiedCodes.Contains(statusItem.StatusID)*/)
+            if (_preoccupiedNames.Contains(statusItem.StatusName) || _preoccupiedCodes.Contains(statusItem.StatusID))
             {
                 return true;
             }
@@ -372,200 +380,6 @@ namespace tataru_assistant_reader
             }
 
             return true;
-        }
-    }
-
-    class StringFunction
-    {
-        public static string GetLogName(ChatLogItem chatLogItem)
-        {
-            string logName = "";
-
-            try
-            {
-                if (chatLogItem.PlayerName != null)
-                {
-                    logName = chatLogItem.PlayerName;
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            return logName;
-        }
-
-        public static string GetMemoryString(MemoryHandler memoryHandler, string key, int length)
-        {
-            string byteString = "";
-
-            try
-            {
-                byte[] byteArray = memoryHandler.GetByteArray(memoryHandler.Scanner.Locations[key], length);
-                byteArray = GetRealByteArray(byteArray);
-                byteString = Encoding.UTF8.GetString(byteArray);
-            }
-            catch (Exception)
-            {
-            }
-
-            return byteString;
-        }
-
-        public static byte[] GetRealByteArray(byte[] byteArray)
-        {
-            List<byte> byteList = new List<byte>();
-            int nullIndex = byteArray.ToList().IndexOf(0x00);
-
-            for (int i = 0; i < nullIndex; i++)
-            {
-                byteList.Add(byteArray[i]);
-            }
-
-            return byteList.ToArray();
-        }
-    }
-
-    class ChatCleaner // Sharlayan.Utilites.ChatCleaner.cs
-    {
-        private const RegexOptions DefaultOptions = RegexOptions.Compiled | RegexOptions.ExplicitCapture;
-
-        //private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
-
-        private static readonly Regex PlayerChatCodesRegex = new Regex(@"^00(0[A-F]|1[0-9A-F])$", DefaultOptions);
-
-        private static readonly Regex PlayerRegEx = new Regex(@"(?<full>\[[A-Z0-9]{10}(?<first>[A-Z0-9]{3,})20(?<last>[A-Z0-9]{3,})\](?<short>[\w']+\.? [\w']+\.?)\[[A-Z0-9]{12}\])", DefaultOptions);
-
-        private static readonly Regex ArrowRegex = new Regex(@"", RegexOptions.Compiled);
-
-        private static readonly Regex HQRegex = new Regex(@"", RegexOptions.Compiled);
-
-        private static readonly Regex NewLineRegex = new Regex(@"[\r\n]+", RegexOptions.Compiled);
-
-        private static readonly Regex NoPrintingCharactersRegex = new Regex(@"[\x00-\x1F]+", RegexOptions.Compiled);
-
-        private static readonly Regex SpecialPurposeUnicodeRegex = new Regex(@"[\uE000-\uF8FF]", RegexOptions.Compiled);
-
-        private static readonly Regex SpecialReplacementRegex = new Regex(@"[�]", RegexOptions.Compiled);
-
-        public static string ProcessFullLine(string code, byte[] bytes)
-        {
-            string line = HttpUtility.HtmlDecode(Encoding.UTF8.GetString(bytes.ToArray())).Replace("  ", " ");
-            try
-            {
-                List<byte> newList = new List<byte>();
-                for (int x = 0; x < bytes.Count(); x++)
-                {
-                    switch (bytes[x])
-                    {
-                        case 2:
-                            // special in-game replacements/wrappers
-                            // 2 46 5 7 242 2 210 3
-                            // 2 29 1 3
-                            // remove them
-                            byte length = bytes[x + 2];
-                            int limit = length - 1;
-                            if (length > 1)
-                            {
-                                x = x + 3 + limit;
-                            }
-                            else
-                            {
-                                x = x + 4;
-                                newList.Add(32);
-                                newList.Add(bytes[x]);
-                            }
-
-                            break;
-                        // unit separator
-                        case 31:
-                            // TODO: this breaks in some areas like NOVICE chat
-                            // if (PlayerChatCodesRegex.IsMatch(code)) {
-                            //     newList.Add(58);
-                            // }
-                            // else {
-                            //     newList.Add(31);
-                            // }
-                            newList.Add(58);
-                            if (PlayerChatCodesRegex.IsMatch(code))
-                            {
-                                newList.Add(32);
-                            }
-
-                            break;
-                        default:
-                            newList.Add(bytes[x]);
-                            break;
-                    }
-                }
-
-                string cleaned = HttpUtility.HtmlDecode(Encoding.UTF8.GetString(newList.ToArray())).Replace("  ", " ");
-
-                newList.Clear();
-
-                // replace right arrow in chat (parsing)
-                cleaned = ArrowRegex.Replace(cleaned, "⇒");
-                // replace HQ symbol
-                cleaned = HQRegex.Replace(cleaned, "[HQ]");
-                // replace all Extended special purpose unicode with empty string
-                cleaned = SpecialPurposeUnicodeRegex.Replace(cleaned, string.Empty);
-                // cleanup special replacement character bytes: 239 191 189
-                cleaned = SpecialReplacementRegex.Replace(cleaned, string.Empty);
-                // remove new lines
-                cleaned = NewLineRegex.Replace(cleaned, string.Empty);
-                // remove characters 0-31
-                cleaned = NoPrintingCharactersRegex.Replace(cleaned, string.Empty);
-
-                line = cleaned;
-            }
-            catch (Exception ex)
-            {
-                // TODO: figure out how to raise exception
-            }
-
-            return ProcessName(line);
-        }
-
-        private static string ProcessName(string cleaned)
-        {
-            string line = cleaned;
-            try
-            {
-                // cleanup name if using other settings
-                Match playerMatch = PlayerRegEx.Match(line);
-                if (playerMatch.Success)
-                {
-                    string fullName = playerMatch.Groups[1].Value;
-                    string firstName = playerMatch.Groups[2].Value.FromHex();
-                    string lastName = playerMatch.Groups[3].Value.FromHex();
-                    string player = $"{firstName} {lastName}";
-
-                    // remove double placement
-                    cleaned = line.Replace($"{fullName}:{fullName}", "•name•");
-
-                    // remove single placement
-                    cleaned = cleaned.Replace(fullName, "•name•");
-                    switch (Regex.IsMatch(cleaned, @"^([Vv]ous|[Dd]u|[Yy]ou)"))
-                    {
-                        case true:
-                            cleaned = cleaned.Substring(1).Replace("•name•", string.Empty);
-                            break;
-                        case false:
-                            cleaned = cleaned.Replace("•name•", player);
-                            break;
-                    }
-                }
-
-                cleaned = Regex.Replace(cleaned, @"[\r\n]+", string.Empty);
-                cleaned = Regex.Replace(cleaned, @"[\x00-\x1F]+", string.Empty);
-                line = cleaned;
-            }
-            catch (Exception ex)
-            {
-                // TODO: figure out how to raise exception
-            }
-
-            return line;
         }
     }
 }
