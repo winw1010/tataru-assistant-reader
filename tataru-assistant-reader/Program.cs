@@ -67,7 +67,7 @@ namespace tataru_assistant_reader
                         );
                 }
 
-                await Task.Delay(200);
+                await Task.Delay(100);
             }
 
             await SystemFunction.WriteSystemMessage("Stop reading...");
