@@ -277,7 +277,7 @@ namespace tataru_assistant_reader
                     if (cutsceneText.Length > 0 && cutsceneText != _lastCutsceneText)
                     {
                         _lastCutsceneText = cutsceneText;
-                        await SystemFunction.WriteData("CUTSCENE", "003D", "", cutsceneText);
+                        await SystemFunction.WriteData("CUTSCENE", "003D", "", cutsceneText, 200);
                     }
                 }
             }
