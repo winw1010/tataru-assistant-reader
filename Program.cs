@@ -253,20 +253,17 @@ namespace tataru_assistant_reader
             {
                 var cutsceneDetectorPointer = (IntPtr)memoryHandler.Scanner.Locations["CUTSCENE_DETECTOR"];
                 int cutsceneFlag = (int)memoryHandler.GetInt64(cutsceneDetectorPointer); // 0 = In cuscene, 1 = Not in cutscene
-                string type = "CUTSCENE_";
 
                 if (cutsceneFlag == 0 || IsInCutsceneStatus(memoryHandler))
                 {
-                    type = "CUTSCENE";
-                }
+                    byte[] rawCutsceneText = GetRealBytes(memoryHandler.GetByteArray(memoryHandler.Scanner.Locations["CUTSCENE_TEXT"], 256));
+                    string cutsceneText = XMLCleaner.SanitizeXmlString(ChatCleaner.ProcessFullLine("003D", rawCutsceneText)).Trim();
 
-                byte[] rawCutsceneText = GetRealBytes(memoryHandler.GetByteArray(memoryHandler.Scanner.Locations["CUTSCENE_TEXT"], 256));
-                string cutsceneText = XMLCleaner.SanitizeXmlString(ChatCleaner.ProcessFullLine("003D", rawCutsceneText)).Trim();
-
-                if (cutsceneText.Length > 0 && cutsceneText != _lastCutsceneText)
-                {
-                    _lastCutsceneText = cutsceneText;
-                    await SystemFunction.WriteData(type, "003D", "", cutsceneText, 200);
+                    if (cutsceneText.Length > 0 && cutsceneText != _lastCutsceneText)
+                    {
+                        _lastCutsceneText = cutsceneText;
+                        await SystemFunction.WriteData("CUTSCENE", "003D", "", cutsceneText, 200);
+                    }
                 }
             }
             catch (Exception)
