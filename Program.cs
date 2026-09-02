@@ -1,15 +1,20 @@
-﻿using Sharlayan;
+﻿using NLog;
+using Sharlayan;
 using Sharlayan.Core;
 using Sharlayan.Enums;
+using Sharlayan.Extensions;
 using Sharlayan.Models;
 using Sharlayan.Utilities;
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Web;
 
 namespace tataru_assistant_reader
 {
@@ -106,34 +111,17 @@ namespace tataru_assistant_reader
         public static MemoryHandler CreateMemoryHandler()
         {
             // Get process
-            Process[] processes = Process.GetProcessesByName("ffxiv_dx11");
-
-            if (!(processes.Length > 0)) { throw new Exception("Waiting..."); }
-
-            // supported: Global, Chinese, Korean
-            GameRegion gameRegion = GameRegion.Global;
-            GameLanguage gameLanguage = GameLanguage.English;
-
-            // whether to always hit API on start to get the latest sigs based on patchVersion, or use the local json cache (if the file doesn't exist, API will be hit)
-            bool useLocalCache = true;
-
-            // patchVersion of game, or latest
-            string patchVersion = "latest";
-
-            // process of game
-            var processModel = new ProcessModel
-            {
-                Process = processes[0],
-            };
+            Process game = Process.GetProcessesByName("ffxiv_dx11").FirstOrDefault()
+              ?? throw new InvalidOperationException("FFXIV not running");
 
             // Create configuration
-            var configuration = new SharlayanConfiguration
+            SharlayanConfiguration configuration = new()
             {
-                ProcessModel = processModel,
-                GameLanguage = gameLanguage,
-                GameRegion = gameRegion,
-                PatchVersion = patchVersion,
-                UseLocalCache = useLocalCache
+                ProcessModel = new ProcessModel { Process = game },
+                // ResourceProvider defaults to FFXIVClientStructsDirect since 9.0.
+                // GameInstallPath is optional; if set, Lumina will load xivdatabase
+                // (actions, statuses, zones) from your local sqpack.
+                GameInstallPath = Path.GetDirectoryName(game.MainModule!.FileName),
             };
 
             // Create memoryHandler
@@ -189,10 +177,7 @@ namespace tataru_assistant_reader
         private static readonly List<string> _systemCodes = new List<string>() { "0039", "0839", "0003", "0038", "003C", "0048", "001D", "001C" };
 
         private static readonly List<string> _knockDownNames = new List<string>() { "Down for the Count", "Au tapis", "Am Boden", "ノックダウン" };
-        private static readonly List<short> _knockDownCodes = new List<short>() { 625, 774, 783, 896, 1762, 1785, 1950, 1953, 1963, 2408, 2910, 2961 };
-
-        private static readonly List<string> _preoccupiedNames = new List<string>() { "Preoccupied", "En action", "Handelt", "行動中" };
-        private static readonly List<short> _preoccupiedCodes = new List<short>() { 1619 };
+        private static readonly List<string> _inEventNames = new List<string>() { "In Event", "Événement", "In Ereignis", "イベント中" };
 
         public static async Task ReadDialog(MemoryHandler memoryHandler)
         {
@@ -201,8 +186,8 @@ namespace tataru_assistant_reader
                 byte[] rawDialogName = GetRealBytes(memoryHandler.GetByteArray(memoryHandler.Scanner.Locations["PANEL_NAME"], 128));
                 byte[] rawDialogText = GetRealBytes(memoryHandler.GetByteArray(memoryHandler.Scanner.Locations["PANEL_TEXT"], 512));
 
-                string dialogName = XMLCleaner.SanitizeXmlString(ChatEntry.ProcessFullLine("003D", rawDialogName)).Trim();
-                string dialogText = XMLCleaner.SanitizeXmlString(ChatEntry.ProcessFullLine("003D", rawDialogText)).Trim();
+                string dialogName = XMLCleaner.SanitizeXmlString(ChatCleaner.ProcessFullLine("003D", rawDialogName)).Trim();
+                string dialogText = XMLCleaner.SanitizeXmlString(ChatCleaner.ProcessFullLine("003D", rawDialogText)).Trim();
 
                 if (dialogName.Length > 0 && dialogText.Length > 0 && dialogText != _lastDialogText)
                 {
@@ -268,17 +253,20 @@ namespace tataru_assistant_reader
             {
                 var cutsceneDetectorPointer = (IntPtr)memoryHandler.Scanner.Locations["CUTSCENE_DETECTOR"];
                 int cutsceneFlag = (int)memoryHandler.GetInt64(cutsceneDetectorPointer); // 0 = In cuscene, 1 = Not in cutscene
+                string type = "CUTSCENE_";
 
-                if (cutsceneFlag == 0)
+                if (cutsceneFlag == 0 || IsInCutsceneStatus(memoryHandler))
                 {
-                    byte[] rawCutsceneText = GetRealBytes(memoryHandler.GetByteArray(memoryHandler.Scanner.Locations["CUTSCENE_TEXT"], 256));
-                    string cutsceneText = XMLCleaner.SanitizeXmlString(ChatEntry.ProcessFullLine("003D", rawCutsceneText)).Trim();
+                    type = "CUTSCENE";
+                }
 
-                    if (cutsceneText.Length > 0 && cutsceneText != _lastCutsceneText)
-                    {
-                        _lastCutsceneText = cutsceneText;
-                        await SystemFunction.WriteData("CUTSCENE", "003D", "", cutsceneText, 200);
-                    }
+                byte[] rawCutsceneText = GetRealBytes(memoryHandler.GetByteArray(memoryHandler.Scanner.Locations["CUTSCENE_TEXT"], 256));
+                string cutsceneText = XMLCleaner.SanitizeXmlString(ChatCleaner.ProcessFullLine("003D", rawCutsceneText)).Trim();
+
+                if (cutsceneText.Length > 0 && cutsceneText != _lastCutsceneText)
+                {
+                    _lastCutsceneText = cutsceneText;
+                    await SystemFunction.WriteData(type, "003D", "", cutsceneText, 200);
                 }
             }
             catch (Exception)
@@ -299,60 +287,26 @@ namespace tataru_assistant_reader
             return bytesList.ToArray();
         }
 
-        private static bool IsViewingCutscene(MemoryHandler memoryHandler)
+        private static bool IsInCutsceneStatus(MemoryHandler memoryHandler)
         {
             if (memoryHandler.Reader.CanGetActors())
             {
-                var partyMembers = memoryHandler.Reader.GetPartyMembers().PartyMembers.Values;
                 var currentPlayer = memoryHandler.Reader.GetCurrentPlayer();
-                List<StatusItem> currentPlayerStatusItems = currentPlayer.Entity.StatusItems;
-
-                /*
-                if (currentPlayer.Entity.InCutscene)
-                {
-                    return true;
-                }
-                */
-
-                // status check (party members)
-                foreach (var partyMember in partyMembers)
-                {
-                    var StatusItems = partyMember.StatusItems;
-
-                    foreach (var statusItem in StatusItems)
-                    {
-                        if (IsCutsceneStatus(statusItem))
-                        {
-                            return true;
-                        }
-                    }
-                }
+                List<StatusItem> statusItems = currentPlayer.Entity.StatusItems;
 
                 // status check (current player)
-                foreach (var statusItem in currentPlayerStatusItems)
+                for (int i = 0; i < statusItems.Count; i++)
                 {
-                    if (IsCutsceneStatus(statusItem))
+                    if (_knockDownNames.Contains(statusItems[i].StatusName))
+                    {
+                        return true;
+                    }
+
+                    if (_inEventNames.Contains(statusItems[i].StatusName))
                     {
                         return true;
                     }
                 }
-            }
-
-            return false;
-        }
-
-        private static bool IsCutsceneStatus(StatusItem statusItem)
-        {
-            // knock down
-            if (_knockDownNames.Contains(statusItem.StatusName) || _knockDownCodes.Contains(statusItem.StatusID))
-            {
-                return true;
-            }
-
-            // preoccupied
-            if (_preoccupiedNames.Contains(statusItem.StatusName) || _preoccupiedCodes.Contains(statusItem.StatusID))
-            {
-                return true;
             }
 
             return false;
@@ -380,6 +334,159 @@ namespace tataru_assistant_reader
             }
 
             return true;
+        }
+    }
+
+    class ChatCleaner
+    {
+        private const RegexOptions DefaultOptions = RegexOptions.Compiled | RegexOptions.ExplicitCapture;
+
+        private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+
+        private static readonly Regex PlayerChatCodesRegex = new Regex(@"^00(0[A-F]|1[0-9A-F])$", DefaultOptions);
+
+        private static readonly Regex PlayerRegEx = new Regex(@"(?<full>\[[A-Z0-9]{10}(?<first>[A-Z0-9]{3,})20(?<last>[A-Z0-9]{3,})\](?<short>[\w']+\.? [\w']+\.?)\[[A-Z0-9]{12}\])", DefaultOptions);
+
+        private static readonly Regex ArrowRegex = new Regex(@"", RegexOptions.Compiled);
+
+        private static readonly Regex HQRegex = new Regex(@"", RegexOptions.Compiled);
+
+        private static readonly Regex NewLineRegex = new Regex(@"[\r\n]+", RegexOptions.Compiled);
+
+        private static readonly Regex NoPrintingCharactersRegex = new Regex(@"[\x00-\x1F]+", RegexOptions.Compiled);
+
+        private static readonly Regex SpecialPurposeUnicodeRegex = new Regex(@"[\uE000-\uF8FF]", RegexOptions.Compiled);
+
+        private static readonly Regex SpecialReplacementRegex = new Regex(@"[�]", RegexOptions.Compiled);
+
+        public static string ProcessFullLine(string code, byte[] bytes)
+        {
+            string line = HttpUtility.HtmlDecode(Encoding.UTF8.GetString(bytes)).Replace("  ", " ");
+            try
+            {
+                List<byte> newList = new List<byte>();
+                for (int x = 0; x < bytes.Length; x++)
+                {
+                    switch (bytes[x])
+                    {
+                        case 2:
+                            // special in-game replacements/wrappers
+                            // 2 46 5 7 242 2 210 3
+                            // 2 29 1 3
+                            // remove them
+                            if (x + 2 >= bytes.Length)
+                            {
+                                break;
+                            }
+
+                            byte length = bytes[x + 2];
+                            int limit = length - 1;
+                            if (length > 1)
+                            {
+                                x = x + 3 + limit;
+                            }
+                            else
+                            {
+                                if (x + 4 >= bytes.Length)
+                                {
+                                    break;
+                                }
+
+                                x = x + 4;
+                                newList.Add(32);
+                                newList.Add(bytes[x]);
+                            }
+
+                            break;
+                        // unit separator
+                        case 31:
+                            // TODO: this breaks in some areas like NOVICE chat
+                            // if (PlayerChatCodesRegex.IsMatch(code)) {
+                            //     newList.Add(58);
+                            // }
+                            // else {
+                            //     newList.Add(31);
+                            // }
+                            newList.Add(58);
+                            if (PlayerChatCodesRegex.IsMatch(code))
+                            {
+                                newList.Add(32);
+                            }
+
+                            break;
+                        default:
+                            newList.Add(bytes[x]);
+                            break;
+                    }
+                }
+
+                string cleaned = HttpUtility.HtmlDecode(Encoding.UTF8.GetString(newList.ToArray())).Replace("  ", " ");
+
+                newList.Clear();
+
+                // replace new lines with space
+                cleaned = NewLineRegex.Replace(cleaned, " ");  // cleaned = NewLineRegex.Replace(cleaned, string.Empty);
+                // replace right arrow in chat (parsing)
+                cleaned = ArrowRegex.Replace(cleaned, "⇒");
+                // replace HQ symbol
+                cleaned = HQRegex.Replace(cleaned, "[HQ]");
+                // replace all Extended special purpose unicode with empty string
+                cleaned = SpecialPurposeUnicodeRegex.Replace(cleaned, string.Empty);
+                // cleanup special replacement character bytes: 239 191 189
+                cleaned = SpecialReplacementRegex.Replace(cleaned, string.Empty);
+                // remove characters 0-31
+                cleaned = NoPrintingCharactersRegex.Replace(cleaned, string.Empty);
+
+                line = cleaned;
+            }
+            catch (Exception)
+            {
+                // TODO: figure out how to raise exception
+            }
+
+            return ProcessName(line);
+        }
+
+        private static string ProcessName(string cleaned)
+        {
+            string line = cleaned;
+            try
+            {
+                // cleanup name if using other settings
+                Match playerMatch = PlayerRegEx.Match(line);
+                if (playerMatch.Success)
+                {
+                    string fullName = playerMatch.Groups[1].Value;
+                    string firstName = playerMatch.Groups[2].Value.FromHex();
+                    string lastName = playerMatch.Groups[3].Value.FromHex();
+                    string player = $"{firstName} {lastName}";
+
+                    // remove double placement
+                    cleaned = line.Replace($"{fullName}:{fullName}", "•name•");
+
+                    // remove single placement
+                    cleaned = cleaned.Replace(fullName, "•name•");
+                    switch (Regex.IsMatch(cleaned, @"^([Vv]ous|[Dd]u|[Yy]ou)"))
+                    {
+                        case true:
+                            cleaned = cleaned.Substring(1).Replace("•name•", string.Empty);
+                            break;
+                        case false:
+                            cleaned = cleaned.Replace("•name•", player);
+                            break;
+                    }
+                }
+
+                cleaned = NewLineRegex.Replace(cleaned, string.Empty);
+                cleaned = NoPrintingCharactersRegex.Replace(cleaned, string.Empty);
+                line = cleaned;
+            }
+            catch (Exception)
+            {
+                // TODO: figure out how to raise exception
+            }
+
+            return line;
         }
     }
 }
