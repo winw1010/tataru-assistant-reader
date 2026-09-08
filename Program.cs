@@ -1,19 +1,12 @@
 ﻿using NLog;
 using Sharlayan;
 using Sharlayan.Core;
-using Sharlayan.Enums;
 using Sharlayan.Extensions;
 using Sharlayan.Models;
 using Sharlayan.Utilities;
-using System;
-using System.Buffers;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using System.Web;
 
 namespace tataru_assistant_reader
