@@ -1,2 +1,3 @@
 # tataru-assistant-reader
- Text reader for Tataru Assistant
+
+A game text reader for [Tataru Assistant](https://github.com/winw1010/tataru-assistant).
